@@ -1,0 +1,22 @@
+{
+  "hamonikr": {
+    "baseUrl": "https://hamonikr.org",
+    "loginUrl": "https://hamonikr.org/index.php?mid=hamoni_board&document_srl=145082&act=dispMemberLoginForm",
+    "boards": {
+      "notice": "https://hamonikr.org/hamoni_notice",
+      "qna": "https://hamonikr.org/hamoni_board"
+    },
+    "credentials": {
+      "username": "your-email@example.com",
+      "password": "your-password"
+    }
+  },
+  "browser": {
+    "headless": true,
+    "timeout": 30000,
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    }
+  }
+}
