@@ -181,21 +181,31 @@ export class HamoniKRClient {
         'a[href*="logout"]',
         '.user-profile',
         '.member-info',
-        'a:has-text("회원정보")'
+        'a:has-text("회원정보")',
+        'a:has-text("회원정보 보기")'  // More specific for HamoniKR
       ];
       
+      let foundLoginIndicator = false;
       for (const selector of loginIndicators) {
         try {
           const element = await page.$(selector);
           if (element && await element.isVisible()) {
-            return true;
+            console.log('Found login indicator:', selector);
+            foundLoginIndicator = true;
+            break;
           }
         } catch (e) {
           continue;
         }
       }
+
+      // Also check for login link (if present, means not logged in)
+      const loginLink = await page.$('a:has-text("로그인")');
+      const hasLoginLink = loginLink && await loginLink.isVisible();
       
-      return false;
+      console.log('Login status check - Found indicator:', foundLoginIndicator, 'Has login link:', hasLoginLink);
+      
+      return foundLoginIndicator && !hasLoginLink;
     } catch (error) {
       console.error('Login status check failed:', error);
       return false;
@@ -214,9 +224,20 @@ export class HamoniKRClient {
       }
 
       // Navigate to appropriate board
-      const boardUrl = postData.board === 'notice' 
-        ? this.config.hamonikr.boards.notice 
-        : this.config.hamonikr.boards.qna;
+      let boardUrl: string;
+      switch (postData.board) {
+        case 'notice':
+          boardUrl = this.config.hamonikr.boards.notice;
+          break;
+        case 'qna':
+          boardUrl = this.config.hamonikr.boards.qna;
+          break;
+        case 'project':
+          boardUrl = this.config.hamonikr.boards.project;
+          break;
+        default:
+          boardUrl = this.config.hamonikr.boards.qna;
+      }
       
       await this.browserManager.navigateTo(boardUrl);
 
@@ -281,20 +302,37 @@ export class HamoniKRClient {
         };
       }
 
-      // Fill in content
+      // Fill in content - Enhanced support for CKEditor and other rich text editors
       const contentSelectors = [
         'textarea[name="content"]',
         'textarea[placeholder*="내용"]',
         '#content',
-        '.editor-content'
+        '.editor-content',
+        'textarea[name="editor_sequence"]',
+        'iframe[name="content___Frame"]', // CKEditor iframe
+        '.cke_wysiwyg_frame', // CKEditor frame
+        '[contenteditable="true"]', // Contenteditable div
+        '.xe_content', // XE content area
+        'textarea[id*="editor"]'
       ];
       
       let contentFilled = false;
+      
+      // First try regular textareas
       for (const selector of contentSelectors) {
+        if (selector.includes('iframe') || selector.includes('Frame')) continue;
+        
         try {
           const element = await page.$(selector);
           if (element && await element.isVisible()) {
-            await page.fill(selector, postData.content);
+            // Check if it's a contenteditable element
+            if (selector.includes('contenteditable') || await element.getAttribute('contenteditable') === 'true') {
+              await element.click();
+              await page.keyboard.press('Control+a');
+              await page.keyboard.type(postData.content);
+            } else {
+              await page.fill(selector, postData.content);
+            }
             contentFilled = true;
             break;
           }
@@ -302,11 +340,94 @@ export class HamoniKRClient {
           continue;
         }
       }
+      
+      // If regular methods failed, try CKEditor iframe approach
+      if (!contentFilled) {
+        try {
+          // Wait for CKEditor to load
+          await page.waitForTimeout(2000);
+          
+          // Try to find CKEditor iframe
+          const iframeSelectors = [
+            'iframe[name*="content"]',
+            'iframe[name*="editor"]',
+            '.cke_wysiwyg_frame'
+          ];
+          
+          for (const iframeSelector of iframeSelectors) {
+            try {
+              const iframe = await page.$(iframeSelector);
+              if (iframe) {
+                const frame = await iframe.contentFrame();
+                if (frame) {
+                  const bodySelector = 'body';
+                  const body = await frame.$(bodySelector);
+                  if (body) {
+                    await body.click();
+                    await body.selectText();
+                    await body.type(postData.content);
+                    contentFilled = true;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        } catch (e) {
+          // CKEditor approach failed
+        }
+      }
+
+      // If still not filled, try JavaScript injection
+      if (!contentFilled) {
+        try {
+          const success = await page.evaluate((content) => {
+            // Try various CKEditor methods
+            if (typeof (window as any).CKEDITOR !== 'undefined') {
+              const CKEDITOR = (window as any).CKEDITOR;
+              for (const instanceName in CKEDITOR.instances) {
+                const instance = CKEDITOR.instances[instanceName];
+                if (instance) {
+                  instance.setData(content);
+                  return true;
+                }
+              }
+            }
+            
+            // Try tinyMCE
+            if (typeof (window as any).tinymce !== 'undefined') {
+              const tinymce = (window as any).tinymce;
+              const editors = tinymce.get();
+              if (editors.length > 0) {
+                editors[0].setContent(content);
+                return true;
+              }
+            }
+            
+            // Try finding contenteditable elements
+            const contentEditableElements = document.querySelectorAll('[contenteditable="true"]');
+            if (contentEditableElements.length > 0) {
+              contentEditableElements[0].innerHTML = content;
+              return true;
+            }
+            
+            return false;
+          }, postData.content);
+          
+          if (success) {
+            contentFilled = true;
+          }
+        } catch (e) {
+          // JavaScript injection failed
+        }
+      }
 
       if (!contentFilled) {
         return {
           success: false,
-          message: '내용 입력 필드를 찾을 수 없습니다.'
+          message: '내용 입력 필드를 찾을 수 없습니다. 다양한 에디터 형식을 시도했으나 모두 실패했습니다.'
         };
       }
 
@@ -376,21 +497,115 @@ export class HamoniKRClient {
       
       const page = await this.browserManager.getPage();
 
-      // Find comment form
+      // Wait for page to load completely
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Check if we're actually logged in by looking for login indicators
+      const isLoggedIn = await this.checkLoginStatus();
+      if (!isLoggedIn) {
+        // Try to login again
+        const retryLogin = await this.login();
+        if (!retryLogin.success) {
+          return {
+            success: false,
+            message: `재로그인 실패: ${retryLogin.message}`
+          };
+        }
+        // Navigate back to the post after login
+        await this.browserManager.navigateTo(commentData.postUrl);
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+      }
+
+      // Check for login required message in comment area
+      const loginRequiredMessage = await page.$('text=댓글 쓰기 권한이 없습니다');
+      if (loginRequiredMessage) {
+        return {
+          success: false,
+          message: '로그인이 필요합니다. 현재 세션이 만료되었을 수 있습니다.'
+        };
+      }
+
+      // First try to activate comment form by clicking "댓글 쓰기"
+      try {
+        const commentWriteButton = await page.$('text=댓글 쓰기');
+        if (commentWriteButton && await commentWriteButton.isVisible()) {
+          await commentWriteButton.click();
+          await page.waitForTimeout(2000);
+        }
+      } catch (e) {
+        // Continue if click fails
+      }
+
+      // Find comment form - Enhanced selectors for HamoniKR community
       const commentSelectors = [
+        // XE-specific selectors for HamoniKR
+        'textarea[name="comment"]',
+        'textarea[class*="comment"]',
+        '#comment',
+        '.comment textarea',
+        'form[class*="comment"] textarea',
+        '.xe_content textarea',
+        
+        // Dynamic editor selectors
+        'iframe[name*="comment"]',
+        '.cke_wysiwyg_frame',
+        
+        // Original selectors
         'textarea[placeholder*="댓글"]',
         'input[placeholder*="댓글"]',
+        'textarea[name="content"]',
+        'input[name="comment"]',
+        'input[name="content"]', 
         'textbox[name*="댓글"]',
         '.comment-input',
-        '#comment_content'
+        '#comment_content',
+        'textarea[id*="comment"]',
+        'input[id*="comment"]',
+        '[contenteditable="true"]', // For rich text comment editors
+        'textarea[placeholder*="내용을 입력하세요"]',
+        'textarea[placeholder*="댓글을 입력"]',
+        'textarea[placeholder*="Write a comment"]',
+        
+        // Generic textarea as last resort
+        'textarea'
       ];
       
       let commentFilled = false;
+      
+      // Wait a bit for dynamic content to load
+      await page.waitForTimeout(3000);
+
+      // Debug: Check current page content for comment area
+      console.log('Current page URL:', await page.url());
+      console.log('Current page title:', await page.title());
+      
+      // Check for comment elements specifically
+      const commentArea = await page.$('.comment, #comment, [class*="comment"]');
+      if (commentArea) {
+        const commentAreaText = await commentArea.textContent();
+        console.log('Found comment area:', commentAreaText?.slice(0, 200));
+      }
+      
       for (const selector of commentSelectors) {
         try {
           const element = await page.$(selector);
           if (element && await element.isVisible()) {
-            await page.fill(selector, commentData.content);
+            // Check if element is disabled (indicates not logged in)
+            const isDisabled = await element.getAttribute('disabled');
+            if (isDisabled !== null) {
+              continue; // Skip disabled elements
+            }
+            
+            // Check if it's a contenteditable element
+            if (selector.includes('contenteditable') || await element.getAttribute('contenteditable') === 'true') {
+              await element.click();
+              await page.keyboard.press('Control+a');
+              await page.keyboard.type(commentData.content);
+            } else {
+              await page.fill(selector, commentData.content);
+            }
             commentFilled = true;
             break;
           }
@@ -399,10 +614,56 @@ export class HamoniKRClient {
         }
       }
 
+      // If regular method failed, try using role-based selectors (for accessibility)
       if (!commentFilled) {
+        try {
+          const roleSelectors = [
+            '[role="textbox"]',
+            'textarea[role="textbox"]',
+            'input[role="textbox"]'
+          ];
+          
+          for (const selector of roleSelectors) {
+            try {
+              const element = await page.$(selector);
+              if (element && await element.isVisible()) {
+                const placeholder = await element.getAttribute('placeholder');
+                const name = await element.getAttribute('name');
+                
+                // Check if it seems like a comment field
+                if (placeholder?.includes('댓글') || name?.includes('comment') || name?.includes('content')) {
+                  await page.fill(selector, commentData.content);
+                  commentFilled = true;
+                  break;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        } catch (e) {
+          // Role-based approach failed
+        }
+      }
+
+      if (!commentFilled) {
+        // Take a screenshot for debugging
+        try {
+          const screenshot = await this.browserManager.screenshot('./debug_comment_page.png');
+          console.log('Debug screenshot saved to ./debug_comment_page.png');
+        } catch (e) {
+          console.log('Failed to take debug screenshot:', e);
+        }
+        
+        // Get page content for debugging
+        const pageContent = await page.content();
+        const hasTextarea = pageContent.includes('<textarea');
+        const hasCommentKeyword = pageContent.includes('댓글');
+        const hasLoginKeyword = pageContent.includes('로그인');
+        
         return {
           success: false,
-          message: '댓글 입력 필드를 찾을 수 없습니다.'
+          message: `댓글 입력 필드를 찾을 수 없습니다. 페이지 분석: textarea=${hasTextarea}, 댓글키워드=${hasCommentKeyword}, 로그인키워드=${hasLoginKeyword}`
         };
       }
 

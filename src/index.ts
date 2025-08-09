@@ -33,7 +33,7 @@ const LoginSchema = z.object({});
 const CreatePostSchema = z.object({
   title: z.string().describe('게시글 제목'),
   content: z.string().describe('게시글 내용'),
-  board: z.enum(['notice', 'qna']).describe('게시판 타입 (notice: 공지사항, qna: 묻고답하기)'),
+  board: z.enum(['notice', 'qna', 'project']).describe('게시판 타입 (notice: 공지사항, qna: 묻고답하기, project: 프로젝트)'),
 });
 
 const AddCommentSchema = z.object({
@@ -83,8 +83,8 @@ const TOOLS: Tool[] = [
         },
         board: {
           type: 'string',
-          enum: ['notice', 'qna'],
-          description: '게시판 타입 (notice: 공지사항, qna: 묻고답하기)',
+          enum: ['notice', 'qna', 'project'],
+          description: '게시판 타입 (notice: 공지사항, qna: 묻고답하기, project: 프로젝트)',
         },
       },
       required: ['title', 'content', 'board'],

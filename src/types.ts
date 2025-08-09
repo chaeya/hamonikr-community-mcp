@@ -4,6 +4,7 @@ export interface HamoniKRConfig {
   boards: {
     notice: string;
     qna: string;
+    project: string;
   };
   credentials: {
     username: string;
@@ -34,7 +35,7 @@ export interface LoginResult {
 export interface PostData {
   title: string;
   content: string;
-  board: 'notice' | 'qna';
+  board: 'notice' | 'qna' | 'project';
 }
 
 export interface PostResult {

@@ -4,11 +4,12 @@
     "loginUrl": "https://hamonikr.org/index.php?mid=hamoni_board&document_srl=145082&act=dispMemberLoginForm",
     "boards": {
       "notice": "https://hamonikr.org/hamoni_notice",
-      "qna": "https://hamonikr.org/hamoni_board"
+      "qna": "https://hamonikr.org/hamoni_board",
+      "project": "https://hamonikr.org/board_project"
     },
     "credentials": {
-      "username": "your-email@example.com",
-      "password": "your-password"
+      "username": "chaeya@gmail.com",
+      "password": "wlwhs73**"
     }
   },
   "browser": {
