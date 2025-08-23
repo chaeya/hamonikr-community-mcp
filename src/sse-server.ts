@@ -486,11 +486,26 @@ app.get('/sse', async (req, res) => {
   console.log('새로운 SSE 연결이 설정되었습니다.');
   
   try {
-    // Create SSE transport - it will handle headers
+    // Determine the correct MCP endpoint URI based on request
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const mcpEndpoint = `${protocol}://${host}/hamonikr-mcp/mcp`;
+    
+    // Create SSE transport with correct endpoint
     const transport = new SSEServerTransport('/sse', res);
     
     // Connect server to transport
     await server.connect(transport);
+    
+    // Send the correct endpoint information
+    setTimeout(() => {
+      try {
+        res.write(`event: endpoint\n`);
+        res.write(`data: ${JSON.stringify({ uri: mcpEndpoint })}\n\n`);
+      } catch (e) {
+        console.error('Failed to send endpoint event:', e);
+      }
+    }, 100);
     
     // Keep connection alive with periodic pings
     const pingInterval = setInterval(() => {
