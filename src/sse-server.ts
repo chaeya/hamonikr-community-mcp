@@ -325,7 +325,9 @@ const PORT = parseInt(process.env.PORT || '5678');
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  exposedHeaders: ['*'],
+  allowedHeaders: ['*']
 }));
 
 app.use(express.json());
@@ -339,17 +341,8 @@ app.get('/health', (req, res) => {
 app.get('/sse', async (req, res) => {
   console.log('새로운 SSE 연결이 설정되었습니다.');
   
-  // Set SSE headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-    'Access-Control-Allow-Credentials': 'true',
-  });
-
   try {
-    // Create SSE transport
+    // Create SSE transport (SSEServerTransport가 헤더를 직접 설정하도록 함)
     const transport = new SSEServerTransport('/sse', res);
     
     // Connect server to transport
@@ -362,7 +355,9 @@ app.get('/sse', async (req, res) => {
     
   } catch (error) {
     console.error('SSE 연결 오류:', error);
-    res.end();
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSE connection failed' });
+    }
   }
 });
 
