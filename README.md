@@ -14,20 +14,21 @@
 
 ## 설치 및 설정
 
-### 1. 의존성 설치
-
 ```bash
-cd ~/workspaces/hamonikr-community-mcp
+git clone https://github.com/chaeya/hamonikr-community-mcp.git
+cd hamonikr-community-mcp
+
+# 1. 설치 (Playwright 브라우저 포함 자동 설치)
 npm install
-```
 
-### 2. 프로젝트 빌드
-
-```bash
+# 2. 빌드
 npm run build
+
+# 3. 시작 (기본적으로 SSE 서버)
+npm start
 ```
 
-### 3. 사용자 자격증명 설정
+### 사용자 자격증명 설정
 
 **보안을 위해 환경 변수 사용을 권장합니다:**
 
@@ -49,49 +50,134 @@ chmod 600 .env
 
 ## 사용 방법
 
-### 로컬 MCP 클라이언트에서 사용 (stdio 방식)
+### MCP 클라이언트 설정
 
-MCP 클라이언트 설정 파일에 다음과 같이 추가하세요:
+이 서버는 두 가지 방식으로 사용할 수 있습니다:
+- **stdio 방식**: 로컬에서 직접 실행 (Claude Code, Cursor 등)
+- **SSE 방식**: 원격 서버로 실행 (웹 클라이언트 등)
 
+#### 1. stdio 방식 (로컬 사용)
+
+**Claude Code에서 설정:**
+
+1. Claude Code 설정 파일 열기:
+   ```bash
+   # macOS
+   ~/.claude/claude_code_config.json
+   
+   # Windows
+   %USERPROFILE%\.claude\claude_code_config.json
+   
+   # Linux
+   ~/.claude/claude_code_config.json
+   ```
+
+2. 다음 설정 추가:
+   ```json
+   {
+     "mcpServers": {
+       "hamonikr-community": {
+         "command": "node",
+         "args": ["/full/path/to/hamonikr-community-mcp/dist/index.js"],
+         "env": {
+           "HAMONIKR_USERNAME": "your-email@example.com",
+           "HAMONIKR_PASSWORD": "your-password"
+         }
+       }
+     }
+   }
+   ```
+
+**Cursor에서 설정:**
+
+1. Cursor 설정 파일 위치:
+   ```bash
+   # macOS
+   ~/Library/Application Support/Cursor/User/mcp_servers.json
+   
+   # Windows
+   %APPDATA%\Cursor\User\mcp_servers.json
+   
+   # Linux
+   ~/.config/Cursor/User/mcp_servers.json
+   ```
+
+2. 설정 내용:
+   ```json
+   {
+     "mcpServers": {
+       "hamonikr-community": {
+         "command": "node",
+         "args": ["/full/path/to/hamonikr-community-mcp/dist/index.js"],
+         "env": {
+           "HAMONIKR_USERNAME": "your-email@example.com",
+           "HAMONIKR_PASSWORD": "your-password"
+         }
+       }
+     }
+   }
+   ```
+
+**Continue 등 기타 MCP 지원 도구:**
+
+대부분의 MCP 클라이언트는 비슷한 형식을 사용합니다:
 ```json
 {
   "mcpServers": {
     "hamonikr-community": {
       "command": "node",
-      "args": ["/home/hamonikr/workspaces/hamonikr-community-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/hamonikr-community-mcp/dist/index.js"],
+      "env": {
+        "HAMONIKR_USERNAME": "your-email@example.com",
+        "HAMONIKR_PASSWORD": "your-password"
+      }
     }
   }
 }
 ```
 
-### 원격 SSE 서버로 사용
+**주의사항:**
+- 절대 경로 사용 필수 (예: `/home/username/hamonikr-community-mcp/dist/index.js`)
+- 먼저 `npm install && npm run build` 실행 필요
+- 환경 변수로 자격증명 설정 (보안상 권장)
 
-#### 1. SSE 서버 시작
+#### 2. SSE 방식 (원격 사용)
+
+**서버 시작:**
 ```bash
-# 개발 모드
-npm run dev:sse
+# 기본 시작 (SSE 모드)
+npm start
 
-# 프로덕션 모드
-npm run build
-npm run start:sse
+# 개발 모드
+npm run dev
+
+# stdio 모드로 시작하려면
+npm run start:stdio
 ```
 
-#### 2. 클라이언트 연결
-SSE 엔드포인트: `http://localhost:5678/sse`
+**클라이언트 연결:**
+- SSE 엔드포인트: `http://localhost:5678/sse`
+- Health Check: `http://localhost:5678/health`
 
-환경 변수로 포트와 CORS 설정 가능:
+**환경 변수 설정:**
 ```bash
 export PORT=5678
 export CORS_ORIGIN="*"  # 또는 특정 도메인
+export HAMONIKR_USERNAME="your-email@example.com"
+export HAMONIKR_PASSWORD="your-password"
 ```
 
-#### 3. 테스트 클라이언트
+**웹 클라이언트 테스트:**
 브라우저에서 `test-sse-client.html`을 열어서 SSE 연결을 테스트할 수 있습니다.
 
-### 직접 실행 (stdio 모드)
-
-```bash
-npm start
+**기타 MCP 클라이언트에서 SSE 사용:**
+```javascript
+// JavaScript 예제
+const eventSource = new EventSource('http://localhost:5678/sse');
+eventSource.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  console.log('MCP Response:', data);
+};
 ```
 
 ## 사용 가능한 도구 (Tools)
@@ -263,7 +349,8 @@ npm start
 ```
 hamonikr-community-mcp/
 ├── src/
-│   ├── index.ts              # MCP 서버 진입점
+│   ├── index.ts              # MCP 서버 진입점 (stdio)
+│   ├── sse-server.ts         # SSE 서버 진입점
 │   ├── hamonikr-client.ts    # 하모니카 커뮤니티 클라이언트
 │   ├── browser-manager.ts    # 브라우저 관리자
 │   └── types.ts              # 타입 정의
@@ -271,6 +358,7 @@ hamonikr-community-mcp/
 │   └── default.json          # 설정 파일
 ├── docs/                     # 문서
 ├── dist/                     # 컴파일된 JavaScript 파일
+├── test-sse-client.html      # SSE 테스트 클라이언트
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -280,7 +368,11 @@ hamonikr-community-mcp/
 
 ### 개발 모드 실행
 ```bash
+# SSE 서버 개발 모드
 npm run dev
+
+# stdio 서버 개발 모드
+npm run dev:stdio
 ```
 
 ### 테스트 실행
