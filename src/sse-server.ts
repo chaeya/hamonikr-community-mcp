@@ -486,23 +486,22 @@ app.get('/sse', async (req, res) => {
   console.log('새로운 SSE 연결이 설정되었습니다.');
   
   try {
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
-    
-    // Send initial endpoint event (MCP requirement)
-    const endpointUri = `${req.protocol}://${req.get('host')}/mcp`;
-    res.write(`event: endpoint\n`);
-    res.write(`data: ${JSON.stringify({ uri: endpointUri })}\n\n`);
-    
-    // Create SSE transport
+    // Create SSE transport first (this will set up proper headers)
     const transport = new SSEServerTransport('/sse', res);
     
     // Connect server to transport
     await server.connect(transport);
+    
+    // Send initial endpoint event (MCP requirement) after connection is established
+    const endpointUri = `${req.protocol}://${req.get('host')}/mcp`;
+    setTimeout(() => {
+      try {
+        res.write(`event: endpoint\n`);
+        res.write(`data: ${JSON.stringify({ uri: endpointUri })}\n\n`);
+      } catch (writeError) {
+        console.error('초기 엔드포인트 이벤트 전송 오류:', writeError);
+      }
+    }, 100);
     
     // Handle client disconnect
     req.on('close', () => {
