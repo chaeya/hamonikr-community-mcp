@@ -486,7 +486,19 @@ app.get('/sse', async (req, res) => {
   console.log('새로운 SSE 연결이 설정되었습니다.');
   
   try {
-    // Create SSE transport (SSEServerTransport가 헤더를 직접 설정하도록 함)
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
+    
+    // Send initial endpoint event (MCP requirement)
+    const endpointUri = `${req.protocol}://${req.get('host')}/mcp`;
+    res.write(`event: endpoint\n`);
+    res.write(`data: ${JSON.stringify({ uri: endpointUri })}\n\n`);
+    
+    // Create SSE transport
     const transport = new SSEServerTransport('/sse', res);
     
     // Connect server to transport
