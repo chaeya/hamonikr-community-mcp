@@ -17,7 +17,7 @@ export class BrowserManager {
     }
 
     this.browser = await chromium.launch({
-      headless: this.config.headless,
+      headless: process.env.BROWSER_HEADLESS === 'false' ? false : true,
     });
 
     this.context = await this.browser.newContext({

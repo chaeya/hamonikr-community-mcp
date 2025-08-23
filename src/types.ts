@@ -13,7 +13,7 @@ export interface HamoniKRConfig {
 }
 
 export interface BrowserConfig {
-  headless: boolean;
+  headless?: boolean;  // 기본값: true (헤드리스)
   timeout: number;
   viewport: {
     width: number;
