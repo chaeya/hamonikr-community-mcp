@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HamoniKR MCP SSE Client Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        #logs {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        .log-send {
+            color: #007bff;
+        }
+        .log-receive {
+            color: #28a745;
+        }
+        .log-error {
+            color: #dc3545;
+        }
+        .log-info {
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <h1>HamoniKR MCP SSE Client Test</h1>
+    
+    <div class="container">
+        <h3>연결 상태</h3>
+        <div id="status">연결 안됨</div>
+        <button id="connectBtn" onclick="connect()">연결</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+    </div>
+
+    <div class="container">
+        <h3>테스트 명령</h3>
+        <button onclick="listTools()" id="listToolsBtn" disabled>도구 목록 조회</button>
+        <button onclick="checkStatus()" id="checkStatusBtn" disabled>상태 확인</button>
+        <button onclick="login()" id="loginBtn" disabled>로그인</button>
+    </div>
+
+    <div class="container">
+        <h3>로그</h3>
+        <button onclick="clearLogs()">로그 지우기</button>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let requestId = 1;
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logs.appendChild(logEntry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateStatus(status) {
+            document.getElementById('status').textContent = status;
+        }
+
+        function updateButtons(connected) {
+            document.getElementById('connectBtn').disabled = connected;
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('listToolsBtn').disabled = !connected;
+            document.getElementById('checkStatusBtn').disabled = !connected;
+            document.getElementById('loginBtn').disabled = !connected;
+        }
+
+        function connect() {
+            const serverUrl = 'http://localhost:5678/sse';
+            log(`SSE 서버에 연결 시도: ${serverUrl}`, 'info');
+            
+            eventSource = new EventSource(serverUrl);
+            
+            eventSource.onopen = function(event) {
+                log('SSE 연결 성공', 'info');
+                updateStatus('연결됨');
+                updateButtons(true);
+            };
+            
+            eventSource.onmessage = function(event) {
+                log(`수신: ${event.data}`, 'receive');
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Parsed data:', data);
+                } catch (e) {
+                    console.log('Raw data:', event.data);
+                }
+            };
+            
+            eventSource.onerror = function(event) {
+                log('SSE 연결 오류', 'error');
+                updateStatus('연결 오류');
+                updateButtons(false);
+            };
+        }
+
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                log('SSE 연결 해제', 'info');
+                updateStatus('연결 해제됨');
+                updateButtons(false);
+            }
+        }
+
+        function sendMCPMessage(method, params = {}) {
+            if (!eventSource) {
+                log('연결되지 않음', 'error');
+                return;
+            }
+
+            const message = {
+                jsonrpc: '2.0',
+                id: requestId++,
+                method: method,
+                params: params
+            };
+
+            log(`송신: ${JSON.stringify(message, null, 2)}`, 'send');
+            
+            // SSE는 서버에서 클라이언트로만 데이터를 보내므로,
+            // 실제 MCP 통신을 위해서는 별도의 POST 엔드포인트가 필요합니다.
+            // 여기서는 테스트용으로 로그만 출력합니다.
+            log('주의: 실제 MCP 통신을 위해서는 별도의 POST 엔드포인트가 필요합니다.', 'info');
+        }
+
+        function listTools() {
+            sendMCPMessage('tools/list');
+        }
+
+        function checkStatus() {
+            sendMCPMessage('tools/call', {
+                name: 'hamonikr_check_status',
+                arguments: {}
+            });
+        }
+
+        function login() {
+            sendMCPMessage('tools/call', {
+                name: 'hamonikr_login',
+                arguments: {}
+            });
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

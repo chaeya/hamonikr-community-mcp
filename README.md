@@ -49,7 +49,7 @@ chmod 600 .env
 
 ## 사용 방법
 
-### MCP 클라이언트에서 사용
+### 로컬 MCP 클라이언트에서 사용 (stdio 방식)
 
 MCP 클라이언트 설정 파일에 다음과 같이 추가하세요:
 
@@ -64,7 +64,31 @@ MCP 클라이언트 설정 파일에 다음과 같이 추가하세요:
 }
 ```
 
-### 직접 실행
+### 원격 SSE 서버로 사용
+
+#### 1. SSE 서버 시작
+```bash
+# 개발 모드
+npm run dev:sse
+
+# 프로덕션 모드
+npm run build
+npm run start:sse
+```
+
+#### 2. 클라이언트 연결
+SSE 엔드포인트: `http://localhost:5678/sse`
+
+환경 변수로 포트와 CORS 설정 가능:
+```bash
+export PORT=5678
+export CORS_ORIGIN="*"  # 또는 특정 도메인
+```
+
+#### 3. 테스트 클라이언트
+브라우저에서 `test-sse-client.html`을 열어서 SSE 연결을 테스트할 수 있습니다.
+
+### 직접 실행 (stdio 모드)
 
 ```bash
 npm start

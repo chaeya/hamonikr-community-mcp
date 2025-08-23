@@ -461,11 +461,155 @@ export class HamoniKRClient {
         };
       }
 
-      await this.browserManager.waitForNavigation();
+      // Wait for submission and navigation
+      let navigationSuccessful = false;
+      try {
+        await this.browserManager.waitForNavigation();
+        navigationSuccessful = true;
+      } catch (error) {
+        console.log('Navigation after submit failed:', error);
+        // Continue to check the page state
+      }
+      
+      // Wait a bit more for page to fully load and any error messages to appear
+      await page.waitForTimeout(5000);
       
       // Get the final URL to extract post ID
       const finalUrl = await this.browserManager.getCurrentUrl();
+      console.log('Final URL after submission:', finalUrl);
+      
+      // More comprehensive error detection
+      // 1. Check if we're still on the write page (indicating failure)
+      if (finalUrl.includes('Write') || finalUrl.includes('write') || finalUrl.includes('dispBoardWrite')) {
+        console.log('Still on write page, checking for errors...');
+        
+        // Check for error messages on the page
+        let errorMessage = '게시글 등록에 실패했습니다.';
+        
+        try {
+          // Look for various error indicators
+          const errorSelectors = [
+            '.error',
+            '.alert',
+            '.message',
+            '.warning',
+            '[class*="error"]',
+            '[class*="alert"]',
+            '[class*="fail"]',
+            'script:contains("alert")', // JavaScript alerts
+            'div:contains("실패")',
+            'div:contains("오류")',
+            'div:contains("에러")',
+            'span:contains("실패")',
+            'span:contains("오류")',
+            'p:contains("실패")',
+            'p:contains("오류")'
+          ];
+          
+          for (const selector of errorSelectors) {
+            try {
+              const errorElement = await page.$(selector);
+              if (errorElement && await errorElement.isVisible()) {
+                const errorText = await errorElement.textContent();
+                if (errorText && errorText.trim() && 
+                    (errorText.includes('실패') || errorText.includes('오류') || 
+                     errorText.includes('에러') || errorText.includes('failed') || 
+                     errorText.includes('error'))) {
+                  errorMessage = errorText.trim();
+                  console.log('Found error message:', errorMessage);
+                  break;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          // Also check page content for common error patterns
+          const pageContent = await page.content();
+          if (pageContent.includes('특수문자') || pageContent.includes('허용되지 않') || 
+              pageContent.includes('금지된') || pageContent.includes('올바르지 않') ||
+              pageContent.includes('유효하지 않')) {
+            errorMessage = '내용에 허용되지 않는 문자나 형식이 포함되어 있습니다.';
+          }
+          
+        } catch (e) {
+          console.log('Error message extraction failed:', e);
+        }
+        
+        return {
+          success: false,
+          message: errorMessage
+        };
+      }
+      
+      // 2. Check if URL didn't change at all (possible JavaScript error)
+      if (!navigationSuccessful) {
+        return {
+          success: false,
+          message: '게시글 제출 중 페이지 이동이 발생하지 않았습니다. 특수문자나 형식 오류가 있을 수 있습니다.'
+        };
+      }
+      
+      // 3. Check for error redirect URLs
+      if (finalUrl.includes('error') || finalUrl.includes('fail') || finalUrl.includes('denied')) {
+        return {
+          success: false,
+          message: '게시글 등록이 거부되었습니다. 권한이나 내용을 확인해주세요.'
+        };
+      }
+      
+      // Extract post ID from successful URL
       const postId = this.extractPostIdFromUrl(finalUrl);
+      
+      // 4. Verify the post was actually created by checking if we can see content
+      try {
+        // Wait for post content to load
+        await page.waitForTimeout(2000);
+        
+        // Look for post indicators (title, content, author info, etc.)
+        const postIndicators = [
+          'h1, .title, .post-title',
+          '.post-content, .content, .document-content',
+          '.author, .writer, .post-author',
+          '.date, .regdate, .post-date'
+        ];
+        
+        let postContentFound = false;
+        for (const selector of postIndicators) {
+          try {
+            const element = await page.$(selector);
+            if (element && await element.isVisible()) {
+              const text = await element.textContent();
+              if (text && text.trim().length > 0) {
+                postContentFound = true;
+                break;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!postContentFound) {
+          return {
+            success: false,
+            message: '게시글이 등록되었지만 내용을 확인할 수 없습니다. 실제로 등록되지 않았을 수 있습니다.'
+          };
+        }
+        
+      } catch (e) {
+        console.log('Post verification failed:', e);
+        // Don't fail here as the URL change indicates likely success
+      }
+      
+      // 5. Final validation: if we have a valid post ID, it's likely successful
+      if (!postId) {
+        return {
+          success: false,
+          message: '게시글 URL에서 게시글 ID를 찾을 수 없습니다. 등록이 완료되지 않았을 수 있습니다.'
+        };
+      }
       
       return {
         success: true,
