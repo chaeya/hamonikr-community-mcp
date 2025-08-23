@@ -114,7 +114,7 @@
         }
 
         function connect() {
-            const serverUrl = 'http://localhost:5678/sse';
+            const serverUrl = 'https://api.hamonize.com/hamonikr-mcp/sse';
             log(`SSE 서버에 연결 시도: ${serverUrl}`, 'info');
             
             eventSource = new EventSource(serverUrl);
@@ -152,7 +152,7 @@
             }
         }
 
-        function sendMCPMessage(method, params = {}) {
+        async function sendMCPMessage(method, params = {}) {
             if (!eventSource) {
                 log('연결되지 않음', 'error');
                 return;
@@ -167,10 +167,30 @@
 
             log(`송신: ${JSON.stringify(message, null, 2)}`, 'send');
             
-            // SSE는 서버에서 클라이언트로만 데이터를 보내므로,
-            // 실제 MCP 통신을 위해서는 별도의 POST 엔드포인트가 필요합니다.
-            // 여기서는 테스트용으로 로그만 출력합니다.
-            log('주의: 실제 MCP 통신을 위해서는 별도의 POST 엔드포인트가 필요합니다.', 'info');
+            try {
+                // POST 요청으로 MCP 명령 전송
+                const response = await fetch('https://api.hamonize.com/hamonikr-mcp/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(message)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                log(`응답: ${JSON.stringify(result, null, 2)}`, 'receive');
+                
+                if (result.error) {
+                    log(`오류: ${result.error.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`요청 실패: ${error.message}`, 'error');
+            }
         }
 
         function listTools() {

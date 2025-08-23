@@ -337,6 +337,150 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// MCP JSON-RPC endpoint for bidirectional communication
+app.post('/mcp', async (req, res) => {
+  console.log('MCP 요청 수신:', JSON.stringify(req.body, null, 2));
+  
+  try {
+    const { jsonrpc, id, method, params } = req.body;
+    
+    if (!jsonrpc || jsonrpc !== '2.0') {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id: id || null,
+        error: { code: -32600, message: 'Invalid Request' }
+      });
+    }
+    
+    let result;
+    
+    switch (method) {
+      case 'tools/list':
+        result = { tools: TOOLS };
+        break;
+        
+      case 'tools/call':
+        const { name, arguments: args } = params;
+        
+        switch (name) {
+          case 'hamonikr_login': {
+            const loginResult = await hamoniKRClient.login();
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify(loginResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_create_post': {
+            const createResult = await hamoniKRClient.createPost(args);
+            result = {
+              content: [{
+                type: 'text', 
+                text: JSON.stringify(createResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_add_comment': {
+            const commentResult = await hamoniKRClient.addComment(args);
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify(commentResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_edit_post': {
+            const editResult = await hamoniKRClient.editPost(args);
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify(editResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_delete_post': {
+            const deleteResult = await hamoniKRClient.deletePost(args.postUrl);
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify(deleteResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_get_post': {
+            const getResult = await hamoniKRClient.getPost(args.postUrl);
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify(getResult, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          case 'hamonikr_check_status': {
+            const session = hamoniKRClient.getSession();
+            result = {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  session,
+                  message: '세션 상태 조회 완료'
+                }, null, 2)
+              }]
+            };
+            break;
+          }
+          
+          default:
+            return res.status(400).json({
+              jsonrpc: '2.0',
+              id,
+              error: { code: -32601, message: `Unknown tool: ${name}` }
+            });
+        }
+        break;
+        
+      default:
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32601, message: `Method not found: ${method}` }
+        });
+    }
+    
+    res.json({
+      jsonrpc: '2.0',
+      id,
+      result
+    });
+    
+  } catch (error) {
+    console.error('MCP 처리 오류:', error);
+    res.status(500).json({
+      jsonrpc: '2.0',
+      id: req.body.id || null,
+      error: { 
+        code: -32603, 
+        message: 'Internal error',
+        data: error instanceof Error ? error.message : String(error)
+      }
+    });
+  }
+});
+
 // SSE endpoint
 app.get('/sse', async (req, res) => {
   console.log('새로운 SSE 연결이 설정되었습니다.');
