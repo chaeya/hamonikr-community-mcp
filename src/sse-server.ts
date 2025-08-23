@@ -497,16 +497,6 @@ app.get('/sse', async (req, res) => {
     // Connect server to transport
     await server.connect(transport);
     
-    // Send the correct endpoint information
-    setTimeout(() => {
-      try {
-        res.write(`event: endpoint\n`);
-        res.write(`data: ${JSON.stringify({ uri: mcpEndpoint })}\n\n`);
-      } catch (e) {
-        console.error('Failed to send endpoint event:', e);
-      }
-    }, 100);
-    
     // Keep connection alive with periodic pings
     const pingInterval = setInterval(() => {
       try {

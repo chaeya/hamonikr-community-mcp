@@ -8,9 +8,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "npm run start:sse",
+    "start": "npm run start:http",
     "start:stdio": "node dist/index.js",
     "start:sse": "node dist/sse-server.js",
+    "start:http": "node dist/http-server.js",
     "dev": "ts-node src/sse-server.ts",
     "dev:stdio": "ts-node src/index.ts",
     "test": "jest",
