@@ -8,6 +8,8 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  InitializeRequestSchema,
+  InitializedNotificationSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -187,118 +189,108 @@ const server = new Server(
   }
 );
 
+// Initialize handler
+server.setRequestHandler(InitializeRequestSchema, async (request) => {
+  console.log('초기화 요청 수신:', request.params);
+  
+  return {
+    protocolVersion: '2024-11-05',
+    capabilities: {
+      tools: {},
+      logging: {}
+    },
+    serverInfo: {
+      name: 'hamonikr-community-mcp',
+      version: '1.0.0'
+    }
+  };
+});
+
+// Initialized notification handler  
+server.setNotificationHandler(InitializedNotificationSchema, async () => {
+  console.log('클라이언트 초기화 완료 알림 수신');
+});
+
 // List tools handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  console.log('도구 목록 요청 수신');
   return {
     tools: TOOLS,
   };
 });
 
-// Call tool handler
+// Call tool handler with improved error handling
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  console.log(`도구 호출 요청: ${name}`, args);
 
   try {
+    let result;
+    
     switch (name) {
       case 'hamonikr_login': {
         LoginSchema.parse(args);
-        const result = await hamoniKRClient.login();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.login();
+        break;
       }
 
       case 'hamonikr_create_post': {
         const validatedArgs = CreatePostSchema.parse(args);
-        const result = await hamoniKRClient.createPost(validatedArgs);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.createPost(validatedArgs);
+        break;
       }
 
       case 'hamonikr_add_comment': {
         const validatedArgs = AddCommentSchema.parse(args);
-        const result = await hamoniKRClient.addComment(validatedArgs);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.addComment(validatedArgs);
+        break;
       }
 
       case 'hamonikr_edit_post': {
         const validatedArgs = EditPostSchema.parse(args);
-        const result = await hamoniKRClient.editPost(validatedArgs);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.editPost(validatedArgs);
+        break;
       }
 
       case 'hamonikr_delete_post': {
         const validatedArgs = DeletePostSchema.parse(args);
-        const result = await hamoniKRClient.deletePost(validatedArgs.postUrl);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.deletePost(validatedArgs.postUrl);
+        break;
       }
 
       case 'hamonikr_get_post': {
         const validatedArgs = GetPostSchema.parse(args);
-        const result = await hamoniKRClient.getPost(validatedArgs.postUrl);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        result = await hamoniKRClient.getPost(validatedArgs.postUrl);
+        break;
       }
 
       case 'hamonikr_check_status': {
         CheckStatusSchema.parse(args);
         const session = hamoniKRClient.getSession();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                success: true,
-                session,
-                message: '세션 상태 조회 완료',
-              }, null, 2),
-            },
-          ],
+        result = {
+          success: true,
+          session,
+          message: '세션 상태 조회 완료',
         };
+        break;
       }
 
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+    
   } catch (error) {
+    console.error(`도구 호출 오류 (${name}):`, error);
+    
     if (error instanceof z.ZodError) {
       throw new Error(`잘못된 인수: ${error.message}`);
     }
@@ -306,13 +298,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
+// Session cleanup function
+function cleanupDeadSessions() {
+  const now = new Date();
+  const timeout = 5 * 60 * 1000; // 5 minutes
+  
+  for (const [sessionId, session] of sessions.entries()) {
+    if (!session.connected || (now.getTime() - session.lastPing.getTime()) > timeout) {
+      console.log(`세션 정리: ${sessionId}`);
+      try {
+        session.transport.close();
+      } catch (error) {
+        console.error(`세션 정리 오류 (${sessionId}):`, error);
+      }
+      sessions.delete(sessionId);
+    }
+  }
+}
+
+// Cleanup dead sessions every 2 minutes
+setInterval(cleanupDeadSessions, 2 * 60 * 1000);
+
 // Handle cleanup
 process.on('SIGINT', async () => {
+  console.log('서버 종료 중...');
+  
+  // Close all sessions
+  for (const [sessionId, session] of sessions.entries()) {
+    try {
+      session.transport.close();
+    } catch (error) {
+      console.error(`세션 종료 오류 (${sessionId}):`, error);
+    }
+  }
+  sessions.clear();
+  
   await hamoniKRClient.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+  console.log('서버 종료 중...');
+  
+  // Close all sessions
+  for (const [sessionId, session] of sessions.entries()) {
+    try {
+      session.transport.close();
+    } catch (error) {
+      console.error(`세션 종료 오류 (${sessionId}):`, error);
+    }
+  }
+  sessions.clear();
+  
   await hamoniKRClient.close();
   process.exit(0);
 });
@@ -334,7 +371,27 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    activeSessions: sessions.size,
+    uptime: process.uptime()
+  });
+});
+
+// Session management endpoint
+app.get('/sessions', (req, res) => {
+  const sessionInfo = Array.from(sessions.entries()).map(([id, session]) => ({
+    id,
+    connected: session.connected,
+    lastPing: session.lastPing,
+    uptime: Date.now() - new Date(session.lastPing).getTime()
+  }));
+  
+  res.json({
+    totalSessions: sessions.size,
+    sessions: sessionInfo
+  });
 });
 
 // MCP JSON-RPC endpoint for bidirectional communication
@@ -355,6 +412,21 @@ app.post('/mcp', async (req, res) => {
     let result;
     
     switch (method) {
+      case 'initialize':
+        console.log('JSON-RPC 초기화 요청 수신:', params);
+        result = {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: {},
+            logging: {}
+          },
+          serverInfo: {
+            name: 'hamonikr-community-mcp',
+            version: '1.0.0'
+          }
+        };
+        break;
+        
       case 'tools/list':
         result = { tools: TOOLS };
         break;
@@ -481,18 +553,37 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
+// Session management
+interface Session {
+  id: string;
+  transport: any;
+  connected: boolean;
+  lastPing: Date;
+}
+
+const sessions = new Map<string, Session>();
+
+function generateSessionId(): string {
+  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 // SSE endpoint
 app.get('/sse', async (req, res) => {
-  console.log('새로운 SSE 연결이 설정되었습니다.');
+  const sessionId = generateSessionId();
+  console.log(`새로운 SSE 연결 설정: ${sessionId}`);
   
   try {
-    // Determine the correct MCP endpoint URI based on request
-    const protocol = req.get('x-forwarded-proto') || req.protocol;
-    const host = req.get('x-forwarded-host') || req.get('host');
-    const mcpEndpoint = `${protocol}://${host}/hamonikr-mcp/mcp`;
-    
-    // Create SSE transport with correct endpoint
+    // Create SSE transport (it will handle headers automatically)
     const transport = new SSEServerTransport('/sse', res);
+    
+    // Create session
+    const session: Session = {
+      id: sessionId,
+      transport,
+      connected: true,
+      lastPing: new Date()
+    };
+    sessions.set(sessionId, session);
     
     // Connect server to transport
     await server.connect(transport);
@@ -500,21 +591,40 @@ app.get('/sse', async (req, res) => {
     // Keep connection alive with periodic pings
     const pingInterval = setInterval(() => {
       try {
-        res.write(':ping\n\n');
+        if (session.connected) {
+          res.write(`:ping
+
+`);
+          session.lastPing = new Date();
+        } else {
+          clearInterval(pingInterval);
+        }
       } catch (e) {
+        console.log(`Ping 실패, 세션 종료: ${sessionId}`);
+        session.connected = false;
         clearInterval(pingInterval);
       }
     }, 30000);
     
     // Handle client disconnect
     req.on('close', () => {
-      console.log('SSE 연결이 종료되었습니다.');
+      console.log(`SSE 연결 종료: ${sessionId}`);
+      session.connected = false;
+      sessions.delete(sessionId);
+      clearInterval(pingInterval);
+      transport.close();
+    });
+
+    req.on('error', (error) => {
+      console.error(`SSE 연결 오류 (${sessionId}):`, error);
+      session.connected = false;
+      sessions.delete(sessionId);
       clearInterval(pingInterval);
       transport.close();
     });
     
   } catch (error) {
-    console.error('SSE 연결 오류:', error);
+    console.error(`SSE 연결 설정 실패 (${sessionId}):`, error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'SSE connection failed' });
     }
